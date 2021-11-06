@@ -1,0 +1,362 @@
+---
+title: "758 hw7"
+author: "Xiaoxia Champon"
+date: "10/22/2021"
+output:
+  word_document: default
+  pdf_document: default
+---
+#1. generate x, beta
+```{r }
+set.seed(123)
+n=1000   #1000
+p=50  #50
+w=matrix(rnorm(n*(p-1),mean=0,sd=1), nrow=n, byrow=T)
+col1=c(rep(1,n))
+x=cbind(col1,w)
+beta0=c(rep(0,10))
+beta1=c(rep(1,40))
+beta=c(beta0,beta1)
+```
+
+
+generate y
+```{r}
+prob=c(1)
+y=c(1)
+for (i in 1:n){
+  prob[i]=1/(1+exp(-x[i,]%*%beta))
+  y[i]=rbinom(1,1,prob[i])
+}
+```
+true value of fbeta
+```{r}
+sumvalue=c(1)
+  for (i in 1:n){
+  sumvalue[i]=y[i]*(x[i,]%*%beta)-log(1+exp(x[i,]%*%beta))
+  }
+  fbeta=-(1/n)*sum(sumvalue)
+  fbeta
+```
+
+
+evaluate fbeta with unknown beta
+```{r}
+fbetaest=c(1)
+for (j in 1:n){
+  beta0=c(runif(10, min = -0.2, max = 0.2))
+  beta1=c(runif(40, min = 0.8, max = 1.2))
+  beta=c(beta0,beta1)
+  sumvalue=c(1)
+  for (i in 1:n){
+  sumvalue[i]=y[i]*(x[i,]%*%beta)-log(1+exp(x[i,]%*%beta))
+  }
+  fbetaest[j]=-(1/n)*sum(sumvalue)
+  
+}
+min(fbetaest)
+max(fbetaest)
+```
+graph 
+```{r}
+plot(1:n,fbetaest,xlab='iteration',ylab='objective function value',main='objective function value graph')
+xcoordinate=c(1:n)
+abline(lm(fbetaest ~ xcoordinate), col="red")
+```
+check
+```{r}
+fbeta %in% fbetaest
+```
+It seems like the objective function jumps up and down and it doesn't attain the true fbeta value.
+#2
+
+define objective function
+```{r}
+
+f=function(beta){
+  #sumvalue=c(1)
+  #for (i in 1:n){
+  #sumvalue[i]=y[i]*(x[i,]%*%beta)-log(1+exp(x[i,]%*%beta))
+  #}
+  #fbetavalue=-(1/n)*sum(sumvalue)
+  #fbetavalue
+  return(-sum(y*(x%*%beta)-log(1+exp(x%*%beta)))/n)
+}
+
+```
+
+
+df 
+```{r}
+df=function(beta){
+  probt=boot::inv.logit(x %*% beta)
+ return(as.vector((-1)*t(x)%*%(y-probt)))
+ 
+}
+```
+
+
+
+dff
+```{r}
+dff=function(beta){
+  prob=boot::inv.logit(x %*% beta)
+  prob=as.vector(prob)
+  vec=list()
+  for (i in 1:n)
+  {
+  vec[i]=prob[i]*(1-prob[i])
+  }
+  return(t(x)%*%diag(vec)%*%x)
+}
+
+```
+
+
+
+newton
+```{r}
+newton=function(beta,f,df,dff){
+ iter=0
+ betanew=beta-solve(dff(beta))%*%df(beta)
+  while(abs(f(betanew)-f(beta))>1e-03){
+    iter=iter+1
+    beta=betanew
+    betanew=beta-solve(dff(beta))%*%df(beta)
+   
+    #if (abs(f(betanew)-f(beta))<1e-3) return (betanew)  
+    #if (abs(f(betanew)-f(beta))>1e-3)  return (beta=betanew)
+  }
+ return(list("Solution" = betanew, "The number of iteration" = iter))
+}
+```
+
+check
+```{r}
+#options(max.print=1000000)
+betainitial=rep(0,p)
+start=proc.time()[3]
+betahat=newton(betainitial,f,df,dff)
+timent=proc.time()[3]-start
+timent
+betahat[2]
+checkbeta=c(unname(betahat$Solution[,1]))
+d=abs(fbeta-f(checkbeta))
+print(cat("deviation from true value:",d))
+```
+coordinate descent
+```{r}
+fcor=function(beta){
+  i = 1
+  j = 1:length(beta)
+  sols = matrix(beta, ncol = 1)
+ 
+  repeat {
+    i = i + 1
+    updates = sols[,(i-1)]
+    for (j in 1:p){
+      
+      g=function(y){
+        updates[j]=y
+        return(f(updates))
+      }
+      updates[j]=optimize(f = g, interval = c(-2, 2))$minimum
+       #ystar=newton(beta,g(y),df(c(beta[1:(i-1)],y,beta[(i+1):p])),dff(c(beta[1:(i-1)],y,beta[(i+1):p])))
+    }
+     sols = cbind(sols, updates)
+     beta=sols[,i-1]
+    if (abs(f(sols[,i])-f(beta))<1e-3) break #return (c(beta[1:(i-1)],ystar,beta[(i+1):p]))  
+    #else (abs(fcor(c(beta[1:(i-1)],ystar,beta[(i+1):p]))-fcor(beta))>1e-3)  break
+  }
+  return(list('solution'=sols[,ncol(sols)],'iteration'=i)  )
+}
+```
+check
+```{r}
+beta0=c(rep(0,p))
+startc=proc.time()[3]
+betahatc=fcor(beta0)
+timentc=proc.time()[3]-start
+timentc
+betahatc[2]
+checkbeta=c(unname(betahatc$solution))
+d=abs(fbeta-f(checkbeta))
+print(cat("deviation from true value:",d))
+```
+
+
+```{r}
+#OLD gradient descent
+# numcol=50
+# gradientf=function(beta){
+#   z=0.9
+#   dfg=function(beta,z){
+#   probt=boot::inv.logit(x %*% beta)
+#  return(as.vector((-1)*t(x)%*%(y-probt))%*%(t(rep(1,numcol)-z*(beta))))
+#  
+# }
+#   
+# dffg=function(beta,z){
+#   p=boot::inv.logit(x %*% beta)
+#   p=as.vector(p)
+#   vec=list()
+#   for (i in 1:n)
+#   {
+#   vec[i]=p[i]*(1-p[i])
+#   }
+#   return(t(x)%*%diag(vec)%*%x%*%((rep(1,numcol)-z*(beta))%*%t((rep(1,numcol)-z*(beta)))))
+# }
+#   iter=0
+#   
+#   
+#   #solsg = matrix(beta, ncol = 1)
+#  #zstar=c(1)
+#   repeat{
+#    
+#     iter=iter+1
+#     g=function(z){
+#       f(beta-z*df(beta))
+#     }
+#    
+#     zstar=optimize(f = g, interval = c(-2, 2))$minimum
+#     betanew=beta-zstar*df(beta)
+#     betanewton=newton(beta,g(z),dfg(beta,zstar),dffg(beta,zstar))[[1]]  #beta-z*df(beta
+#   
+#     if (abs(f(betanewton)-f(betanew))<1e-3)   break #return (beta[[1]]-zstar*df(beta[[1]])) 
+#     #if (abs(f(betanew)-f(beta))<1e-3) return (betanew)  
+#     
+#      #if (abs(f(betanew)-f(beta))>1e-3)  return (beta=betanew)
+#     
+#   #abs(f(solsg[,iter]-zstar*df(solsg[,iter]))
+#     #if (abs(gradientf(beta-zstar*df(beta))-gradientf(beta))>1e-3)  return (beta)
+#   }
+#   
+#   return(list('solution'=betanew,'iteration'=iter)  )
+# }
+```
+
+gradient descent
+```{r}
+gradientdec=function(beta){
+  z=0.1
+  iter=0
+  betanew=beta-z*df(beta)
+  while(abs(f(betanew)-f(beta))>1e-03) {
+    
+    iter=iter+1
+    beta=betanew
+    g=function(z){
+      f(beta-z*df(beta))
+    }
+   
+    zstar=optimize(f = g, interval = c(-2, 2))$minimum
+    betanew=beta-zstar*df(beta)
+  }
+  return(list("Solution" = betanew, "The number of iteration" = iter))
+}
+```
+
+
+check
+```{r}
+numcol=50
+beta0=c(rep(0,numcol))
+startc=proc.time()[3]
+betahatg=gradientdec(beta0)
+timentg=proc.time()[3]-start
+timentg
+betahatg[2]
+checkbeta=c(unname(betahatg$Solution))
+d=abs(fbeta-f(checkbeta))
+print(cat("deviation from true value:",d))
+```
+BFGS
+step 1 line search
+```{r}
+lines=function(beta){
+  z=1
+  g=function(z){
+    f(beta-z*df(beta))
+  }
+  vstar=optimize(f=g,interval=c(-2, 2))$minimum
+  return (vstar)
+}
+```
+
+step2
+```{r}
+bfgs=function(beta){
+  P=diag(x = 1, p, p, names = TRUE)
+  i=1
+  repeat{
+    i=i+1
+    deltabeta=-P%*%df(beta)
+    v=0.5
+    v=lines(beta+v*deltabeta)
+    deltabeta=v*deltabeta
+    g=df(beta+deltabeta)-df(beta)
+    e=deltabeta-(P%*%g)
+    P=P+(e%*%g)%*%((deltabeta%*%t(deltabeta))*solve(((g%*%deltabeta)^2))[1])-(e%*%t(deltabeta)+deltabeta%*%t(e))/(t(g)%*%deltabeta)[1]
+    betanew=beta+deltabeta
+    
+    if (abs(f(betanew)-f(beta))<1e-3) return (betanew)  
+    if (abs(f(betanew)-f(beta))>1e-3)  return (beta=betanew)
+    
+  }
+}
+```
+check
+```{r}
+beta0=c(rep(0,p))
+startbf=proc.time()[3]
+betahatbf=bfgs(beta0)
+timebf=proc.time()[3]-start
+timebf
+i
+checkbeta=c(unname(betahatbf))
+d=abs(fbeta-f(checkbeta))
+print(cat("deviation from true value:",d))
+```
+
+stochastic descent:pick 100 of f and use newton for each one. 
+```{r}
+
+
+#redefine objective fobj
+
+stocastic=function(beta){
+  iter=0
+  betahatnew= matrix(beta,ncol=1)
+  for (i in 1:100){
+    iter=iter+1
+    number=sample(1:n,1)
+    fobj=function(beta){
+      y[number]*(x[number,]%*%beta)-log(1+exp(x[number,]%*%beta))
+    }
+    print(i)
+    
+    betanew=unname(newton(beta,fobj(beta),df(beta),dff(beta))$Solution)
+    
+    betahatnew=betanew[,i]
+    
+  }
+
+ # return (list("solution"=betahatlast,'iteration'=iter))
+  }
+
+
+```
+
+check
+
+```{r}
+beta0=c(rep(0,p))
+startstog=proc.time()[3]
+betahatstog=stocastic(beta0)
+timelast=proc.time()[3]-start
+timelast
+
+d=f(beta)-f(betahatlast)
+print(cat("deviation from true value:",d))
+```
+
