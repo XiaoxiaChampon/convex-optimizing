@@ -1,2 +1,2 @@
 # convex-optimizing
-coordinate descent, newton, gradient descent, stochastic gradient, 
+coordinate descent, newton, gradient descent, BFGS,stochastic gradient, 
